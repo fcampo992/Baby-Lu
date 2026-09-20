@@ -2,11 +2,17 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useCart } from '@/components/CartProvider'
 import { addItem } from '@/lib/cart'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface FlyingEmoji {
+  id: number
+  x: number
+  y: number
+}
 
 interface ProductImage {
   url: string
@@ -88,10 +94,13 @@ function StockIndicator({ stock }: { stock: number }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ProductDetailClient({ product }: Props) {
-  const { cart, setCart } = useCart()
+  const { cart, setCart, addToastNotification } = useCart()
   const [added, setAdded] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [activeImageIndex, setActiveImageIndex] = useState(0)
+  const [flyingEmojis, setFlyingEmojis] = useState<FlyingEmoji[]>([])
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const emojiCounter = useRef(0)
 
   // ── Variant state ──────────────────────────────────────────────────────────
   const hasVariants = product.variants && product.variants.length > 0
@@ -180,6 +189,17 @@ export function ProductDetailClient({ product }: Props) {
     }, quantity)
 
     setCart(updated)
+    addToastNotification(variantLabel ? `${product.title} (${variantLabel})` : product.title)
+
+    // Flying emoji from button position
+    const btn = buttonRef.current
+    if (btn) {
+      const rect = btn.getBoundingClientRect()
+      const id = ++emojiCounter.current
+      setFlyingEmojis(prev => [...prev, { id, x: rect.left + rect.width / 2, y: rect.top }])
+      setTimeout(() => setFlyingEmojis(prev => prev.filter(f => f.id !== id)), 800)
+    }
+
     setAdded(true)
     setTimeout(() => setAdded(false), 2500)
   }
@@ -201,6 +221,7 @@ export function ProductDetailClient({ product }: Props) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="grid grid-cols-1 lg:grid-cols-2">
 
@@ -269,20 +290,7 @@ export function ProductDetailClient({ product }: Props) {
             <span className="text-3xl font-extrabold text-gray-900">{formattedPrice}</span>
           </div>
 
-          {/* Stock indicator */}
-          <div className="mb-5">
-            {hasVariants ? (
-              selectedVariant ? (
-                <StockIndicator stock={selectedVariant.stock} />
-              ) : (
-                <span className="text-sm text-gray-500">
-                  {product.variants!.reduce((s, v) => s + v.stock, 0)} unidades en stock total
-                </span>
-              )
-            ) : (
-              <StockIndicator stock={product.stock} />
-            )}
-          </div>
+          {/* Stock indicator — hidden from buyers, only shown internally */}
 
           <hr className="border-gray-100 mb-6" />
 
@@ -393,14 +401,7 @@ export function ProductDetailClient({ product }: Props) {
                 </p>
               )}
 
-              {/* Selected variant stock hint */}
-              {selectedVariant && selectedVariant.stock > 0 && (
-                <p className="text-xs text-gray-500">
-                  {selectedVariant.stock <= 5
-                    ? `⚠️ Solo quedan ${selectedVariant.stock} unidades en esta opción`
-                    : `${selectedVariant.stock} unidades disponibles en esta opción`}
-                </p>
-              )}
+              {/* Stock hint removed — not shown to buyers */}
             </div>
           )}
 
@@ -425,7 +426,7 @@ export function ProductDetailClient({ product }: Props) {
                   >+</button>
                 </div>
                 <span className="text-xs text-gray-400">
-                  {needsVariantSelection ? 'Elegí las opciones primero' : `Máx. ${effectiveStock} unidades`}
+                  {needsVariantSelection ? 'Elegí las opciones primero' : ''}
                 </span>
               </div>
             </div>
@@ -433,6 +434,7 @@ export function ProductDetailClient({ product }: Props) {
 
           {/* CTA */}
           <button
+            ref={buttonRef}
             onClick={handleAddToCart}
             disabled={addDisabled}
             className={`w-full py-3.5 px-6 rounded-xl font-semibold text-sm transition-all duration-300 ${
@@ -466,5 +468,16 @@ export function ProductDetailClient({ product }: Props) {
         </div>
       </div>
     </div>
+
+      {/* Flying emojis */}
+      {flyingEmojis.map(emoji => (
+        <span key={emoji.id} style={{
+          position: 'fixed', left: emoji.x, top: emoji.y, zIndex: 9999,
+          pointerEvents: 'none', fontSize: '1.5rem',
+          animation: 'fly-up 0.8s ease-out forwards',
+          transform: 'translateX(-50%)',
+        }}>🛒</span>
+      ))}
+    </>
   )
 }
