@@ -1,27 +1,16 @@
 'use client'
 
-/**
- * VariantsEditor — componente para gestionar variantes de un producto
- * (talle + color + stock) desde los formularios de admin.
- *
- * Props:
- *  - productId: si está presente, guarda/borra en la API directamente.
- *               Si es undefined (producto nuevo), opera en modo local
- *               y expone variants vía onChangeLocal para que el padre
- *               las envíe al crear el producto.
- */
-
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 export interface VariantRow {
-  id?: string          // presente sólo si ya está en DB
+  id?: string
   size: string
   color: string
-  stock: string        // string para el input, se parsea al guardar
+  stock: string
   saving?: boolean
   saved?: boolean
   error?: string
-  isNew?: boolean      // row todavía no guardada en DB
+  isNew?: boolean
 }
 
 interface VariantOption {
@@ -32,7 +21,6 @@ interface VariantOption {
 
 interface VariantsEditorProps {
   productId?: string
-  /** Modo nuevo producto: el padre recibe las filas para incluirlas en el POST */
   onChangeLocal?: (variants: VariantRow[]) => void
 }
 
@@ -43,8 +31,10 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
   const [loading, setLoading] = useState(true)
   const [globalError, setGlobalError] = useState('')
 
-  // Load existing variants (only if editing an existing product)
-  // and global variant options for selects
+  // Use a ref to avoid calling onChangeLocal during the initial load
+  // (which would cause "setState during render" React error)
+  const isInitialLoad = useRef(true)
+
   useEffect(() => {
     async function load() {
       try {
@@ -76,18 +66,19 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
         setGlobalError('Error al cargar opciones de variante')
       } finally {
         setLoading(false)
+        // Allow notifyParent after initial load is complete
+        isInitialLoad.current = false
       }
     }
     load()
   }, [productId])
 
-  // Notify parent in local mode whenever rows change
-  const notifyParent = useCallback(
-    (newRows: VariantRow[]) => {
-      if (onChangeLocal) onChangeLocal(newRows)
-    },
-    [onChangeLocal]
-  )
+  // Notify parent only after initial load (never during render)
+  function notifyParent(newRows: VariantRow[]) {
+    if (!isInitialLoad.current && onChangeLocal) {
+      onChangeLocal(newRows)
+    }
+  }
 
   function addRow() {
     const newRow: VariantRow = { size: '', color: '', stock: '0', isNew: true }
@@ -101,12 +92,11 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
       const next = prev.map((r, i) =>
         i === idx ? { ...r, [field]: value, error: '', saved: false } : r
       )
-      notifyParent(next)
+      // Call outside of setState callback to avoid nested setState issues
+      setTimeout(() => notifyParent(next), 0)
       return next
     })
   }
-
-  // ── Save to DB (edit mode only) ─────────────────────────────────────────────
 
   async function saveRow(idx: number) {
     const row = rows[idx]
@@ -117,7 +107,7 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
       return
     }
     if (!row.size && !row.color) {
-      setRows(prev => prev.map((r, i) => i === idx ? { ...r, error: 'Ingresá talle o color' } : r))
+      setRows(prev => prev.map((r, i) => i === idx ? { ...r, error: 'Ingresá al menos talle o color' } : r))
       return
     }
 
@@ -126,7 +116,6 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
     try {
       let res: Response
       if (row.id) {
-        // Update existing variant
         res = await fetch(`/api/products/${productId}/variants/${row.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -137,7 +126,6 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
           }),
         })
       } else {
-        // Create new variant
         res = await fetch(`/api/products/${productId}/variants`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -158,9 +146,7 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
 
       setRows(prev =>
         prev.map((r, i) =>
-          i === idx
-            ? { ...r, id: data.variant.id, saving: false, saved: true, isNew: false }
-            : r
+          i === idx ? { ...r, id: data.variant.id, saving: false, saved: true, isNew: false } : r
         )
       )
       setTimeout(() => {
@@ -174,7 +160,6 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
   async function deleteRow(idx: number) {
     const row = rows[idx]
 
-    // If not yet saved, just remove from local state
     if (!row.id) {
       const updated = rows.filter((_, i) => i !== idx)
       setRows(updated)
@@ -182,7 +167,8 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
       return
     }
 
-    if (!confirm(`¿Eliminar la variante ${row.size || ''}${row.size && row.color ? ' / ' : ''}${row.color || ''}?`)) return
+    const label = [row.size, row.color].filter(Boolean).join(' / ') || 'esta variante'
+    if (!confirm(`¿Eliminar ${label}?`)) return
 
     setRows(prev => prev.map((r, i) => i === idx ? { ...r, saving: true } : r))
     try {
@@ -195,72 +181,78 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
     }
   }
 
-  if (loading) {
-    return <p className="text-sm text-gray-400">Cargando variantes...</p>
-  }
+  if (loading) return <p className="text-sm text-gray-400">Cargando variantes...</p>
+
+  // Determine which columns to show based on available options
+  const hasSizes = sizeOptions.length > 0
+  const hasColors = colorOptions.length > 0
+
+  // Dynamic grid: show only columns that have options configured
+  const colCount = (hasSizes ? 1 : 0) + (hasColors ? 1 : 0) + 1 // +1 for stock
+  const gridClass =
+    hasSizes && hasColors ? 'grid-cols-[1fr_1fr_90px_auto]'
+    : (hasSizes || hasColors) ? 'grid-cols-[1fr_90px_auto]'
+    : 'grid-cols-[1fr_auto]'
 
   return (
     <div className="space-y-3">
-      {globalError && (
-        <p className="text-sm text-red-600">{globalError}</p>
+      {globalError && <p className="text-sm text-red-600">{globalError}</p>}
+
+      {!hasSizes && !hasColors && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          No hay talles ni colores configurados todavía.{' '}
+          <a href="/admin/variant-options" target="_blank" className="underline font-medium">
+            Configurá las opciones primero →
+          </a>
+        </p>
       )}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-400 py-2">
+        <p className="text-sm text-gray-400 py-1">
           Sin variantes. El stock se maneja a nivel de producto.
         </p>
       ) : (
         <div className="space-y-2">
           {/* Header */}
-          <div className="grid grid-cols-[1fr_1fr_100px_auto] gap-2 px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            <span>Talle</span>
-            <span>Color</span>
+          <div className={`grid ${gridClass} gap-2 px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide`}>
+            {hasSizes && <span>Talle</span>}
+            {hasColors && <span>Color</span>}
             <span>Stock</span>
             <span />
           </div>
 
           {rows.map((row, idx) => (
-            <div key={row.id ?? `new-${idx}`} className="grid grid-cols-[1fr_1fr_100px_auto] gap-2 items-start">
-              {/* Size */}
-              <div>
+            <div key={row.id ?? `new-${idx}`} className={`grid ${gridClass} gap-2 items-start`}>
+              {hasSizes && (
                 <select
                   value={row.size}
                   onChange={e => updateRow(idx, 'size', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                 >
                   <option value="">— Ninguno —</option>
-                  {sizeOptions.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
+                  {sizeOptions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </div>
+              )}
 
-              {/* Color */}
-              <div>
+              {hasColors && (
                 <select
                   value={row.color}
                   onChange={e => updateRow(idx, 'color', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                 >
                   <option value="">— Ninguno —</option>
-                  {colorOptions.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {colorOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-              </div>
+              )}
 
-              {/* Stock */}
-              <div>
-                <input
-                  type="number"
-                  min="0"
-                  value={row.stock}
-                  onChange={e => updateRow(idx, 'stock', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+              <input
+                type="number"
+                min="0"
+                value={row.stock}
+                onChange={e => updateRow(idx, 'stock', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
 
-              {/* Actions */}
               <div className="flex items-center gap-1 pt-0.5">
                 {productId && (
                   <button
@@ -282,9 +274,8 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
                 </button>
               </div>
 
-              {/* Error / saved feedback (spans full row) */}
               {(row.error || row.saved) && (
-                <div className="col-span-4 -mt-1">
+                <div className={`${colCount === 3 ? 'col-span-4' : 'col-span-3'} -mt-1`}>
                   {row.error && <p className="text-xs text-red-600">{row.error}</p>}
                   {row.saved && <p className="text-xs text-green-600">✓ Guardado</p>}
                 </div>
@@ -294,18 +285,19 @@ export function VariantsEditor({ productId, onChangeLocal }: VariantsEditorProps
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={addRow}
-        className="mt-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition"
-      >
-        + Agregar variante
-      </button>
+      {(hasSizes || hasColors) && (
+        <button
+          type="button"
+          onClick={addRow}
+          className="mt-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition"
+        >
+          + Agregar variante
+        </button>
+      )}
 
       {!productId && rows.length > 0 && (
         <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Las variantes se guardarán cuando crees el producto.
-          {' '}Podés editarlas en detalle después.
+          Las variantes se guardarán cuando crees el producto. Podés editarlas en detalle después.
         </p>
       )}
     </div>

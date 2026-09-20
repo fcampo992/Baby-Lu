@@ -46,13 +46,13 @@ export function ProductCard({ product }: ProductCardProps) {
     ? [...new Set(product.variants!.map(v => v.color).filter(Boolean) as string[])]
     : []
 
-  // Resolved selected variant
+  // Resolved selected variant — only match on dimensions that actually exist
   const selectedVariant: ProductVariantSummary | null = hasVariants
-    ? (product.variants!.find(
-        v =>
-          (allSizes.length === 0 || v.size === selectedSize) &&
-          (allColors.length === 0 || v.color === selectedColor)
-      ) ?? null)
+    ? (product.variants!.find(v => {
+        const sizeMatch = allSizes.length === 0 || v.size === selectedSize
+        const colorMatch = allColors.length === 0 || v.color === selectedColor
+        return sizeMatch && colorMatch
+      }) ?? null)
     : null
 
   // Is a variant selection required but not yet complete?
@@ -215,7 +215,8 @@ export function ProductCard({ product }: ProductCardProps) {
                   <p className="text-xs text-gray-500 mb-1 font-medium">Talle</p>
                   <div className="flex flex-wrap gap-1.5">
                     {allSizes.map(size => {
-                      // Find if this size has any available stock (for any color, or the selected color)
+                      // Available if at least one variant with this size has stock
+                      // Only cross-filter by color when colors actually exist
                       const available = product.variants!.some(
                         v =>
                           v.size === size &&
@@ -233,7 +234,7 @@ export function ProductCard({ product }: ProductCardProps) {
                             selected
                               ? 'bg-black text-white border-black'
                               : available
-                              ? 'bg-white text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-100'
+                              ? 'bg-gray-100 text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-200'
                               : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through'
                           }`}
                         >
@@ -268,7 +269,7 @@ export function ProductCard({ product }: ProductCardProps) {
                             selected
                               ? 'bg-black text-white border-black'
                               : available
-                              ? 'bg-white text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-100'
+                              ? 'bg-gray-100 text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-200'
                               : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through'
                           }`}
                         >

@@ -107,12 +107,13 @@ export function ProductDetailClient({ product }: Props) {
     ? [...new Set(product.variants!.map(v => v.color).filter(Boolean) as string[])]
     : []
 
-  // Find the variant matching current selection
+  // Find variant matching current selection — only match on dimensions that exist
   const selectedVariant: ProductVariant | null = hasVariants
-    ? (product.variants!.find(v =>
-        (allSizes.length === 0 || v.size === selectedSize) &&
-        (allColors.length === 0 || v.color === selectedColor)
-      ) ?? null)
+    ? (product.variants!.find(v => {
+        const sizeMatch = allSizes.length === 0 || v.size === selectedSize
+        const colorMatch = allColors.length === 0 || v.color === selectedColor
+        return sizeMatch && colorMatch
+      }) ?? null)
     : null
 
   // Needs selection: has options but user hasn't chosen yet
