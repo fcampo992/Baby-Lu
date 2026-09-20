@@ -26,6 +26,7 @@ export async function GET(
       include: {
         category: true,
         images: { orderBy: { order: 'asc' } },
+        variants: { orderBy: [{ size: 'asc' }, { color: 'asc' }] },
       },
     })
 

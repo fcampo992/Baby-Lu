@@ -76,6 +76,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         include: {
           category: { select: { id: true, name: true } },
           images: { orderBy: { order: 'asc' } },
+          variants: { orderBy: [{ size: 'asc' }, { color: 'asc' }] },
         },
       }),
       prisma.setting.findUnique({ where: { key: 'store_name' } }),

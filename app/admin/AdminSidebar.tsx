@@ -6,16 +6,18 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const NAV_ITEMS = [
-  { href: '/admin',            label: '📊 Dashboard',         exact: true  },
-  { href: '/admin/products',   label: '📦 Productos',          exact: false },
-  { href: '/admin/orders',     label: '🛒 Pedidos',            exact: false },
-  { href: '/admin/customers',  label: '👥 Clientes',           exact: false },
-  { href: '/admin/stock',      label: '📋 Stock',              exact: false },
-  { href: '/admin/categories', label: '🏷️ Categorías',         exact: false },
-  { href: '/admin/banners',    label: '🖼️ Banners',            exact: false },
-  { href: '/admin/branding',   label: '🎨 Identidad',           exact: false },
-  { href: '/admin/settings',   label: '⚙️ Configuración',      exact: false },
-  { href: '/admin/admins',     label: '👥 Administradores',    exact: false },
+  { href: '/admin',                   label: '📊 Dashboard',            exact: true  },
+  { href: '/admin/products',          label: '📦 Productos',             exact: false },
+  { href: '/admin/orders',            label: '🛒 Pedidos',               exact: false },
+  { href: '/admin/customers',         label: '👥 Clientes',              exact: false },
+  { href: '/admin/stock',             label: '📋 Stock',                 exact: false },
+  { href: '/admin/categories',        label: '🏷️ Categorías',            exact: false },
+  { href: '/admin/variant-options',   label: '🎨 Talles y Colores',      exact: false },
+  { href: '/admin/delivery-options',  label: '📍 Puntos de Entrega',     exact: false },
+  { href: '/admin/banners',           label: '🖼️ Banners',               exact: false },
+  { href: '/admin/branding',          label: '🎨 Identidad',              exact: false },
+  { href: '/admin/settings',          label: '⚙️ Configuración',         exact: false },
+  { href: '/admin/admins',            label: '👥 Administradores',       exact: false },
 ]
 
 export function AdminSidebar() {

@@ -41,6 +41,7 @@ model Product {
   updatedAt   DateTime       @updatedAt
   orderItems  OrderItem[]
   images      ProductImage[]
+  variants    ProductVariant[]
 }
 
 model ProductImage {
@@ -51,27 +52,70 @@ model ProductImage {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
+// Puntos de retiro/entrega configurables por el vendedor
+model DeliveryOption {
+  id          String   @id @default(cuid())
+  name        String               // ej: "Retiro en local", "Coordinar con el vendedor"
+  description String?              // detalle opcional visible al comprador
+  active      Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      Order[]
+}
+
 model Order {
-  id           String      @id @default(cuid())
-  customerName String
-  address      String
-  notes        String?
-  total        Float
-  status       String      @default("PENDING")
-  createdAt    DateTime    @default(now())
-  userId       String?
-  user         User?       @relation(fields: [userId], references: [id])
-  items        OrderItem[]
+  id               String          @id @default(cuid())
+  customerName     String
+  address          String          // nombre de la opción de entrega elegida
+  notes            String?
+  total            Float
+  status           String          @default("PENDING")
+  createdAt        DateTime        @default(now())
+  userId           String?
+  deliveryOptionId String?         // referencia a la opción elegida
+  user             User?           @relation(fields: [userId], references: [id])
+  deliveryOption   DeliveryOption? @relation(fields: [deliveryOptionId], references: [id])
+  items            OrderItem[]
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
+  id        String          @id @default(cuid())
   orderId   String
   productId String
+  variantId String?         // null = producto sin variantes
   quantity  Int
   unitPrice Float
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product         @relation(fields: [productId], references: [id])
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+}
+
+// ─── Variantes ───────────────────────────────────────────────────────────────
+
+// Opciones globales configurables (talles y colores disponibles en la tienda)
+model VariantOption {
+  id        String   @id @default(cuid())
+  type      String   // "SIZE" | "COLOR"
+  value     String   // ej: "M", "XL", "Rojo", "Azul marino"
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([type, value])
+}
+
+// Combinación concreta de talle+color para un producto, con su propio stock
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  size      String? // valor del talle (ej: "M") — null si no aplica
+  color     String? // valor del color (ej: "Rojo") — null si no aplica
+  stock     Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  orderItems OrderItem[]
+
+  @@unique([productId, size, color])
 }
 
 model Setting {

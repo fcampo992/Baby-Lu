@@ -23,6 +23,7 @@ interface Order {
   createdAt: string
   user: { id: string; name: string; email: string } | null
   items: OrderItem[]
+  deliveryOption: { id: string; name: string; description: string | null } | null
 }
 
 interface Pagination {
@@ -296,8 +297,15 @@ function OrderRow({
                     <span className="font-medium text-gray-800">{order.customerName}</span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-gray-400 w-20 shrink-0">Dirección</span>
-                    <span className="text-gray-700">{order.address}</span>
+                    <span className="text-gray-400 w-20 shrink-0">Entrega</span>
+                    <div>
+                      <span className="text-gray-700 font-medium">
+                        {order.deliveryOption?.name ?? order.address}
+                      </span>
+                      {order.deliveryOption?.description && (
+                        <p className="text-xs text-gray-400 mt-0.5">{order.deliveryOption.description}</p>
+                      )}
+                    </div>
                   </div>
                   {order.notes && (
                     <div className="flex gap-2">

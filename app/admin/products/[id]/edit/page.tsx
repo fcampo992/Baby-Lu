@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { VariantsEditor } from '@/components/admin/VariantsEditor'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -616,6 +617,17 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
           {fieldErrors.imageUrl && (
             <p className="mt-1 text-xs text-red-600">{fieldErrors.imageUrl}</p>
           )}
+        </div>
+
+        {/* Variants section */}
+        <div className="border-t border-gray-100 pt-5">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">Variantes (talle / color)</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Cada variante tiene su propio stock. Los cambios se guardan individualmente con el botón 💾.
+            </p>
+          </div>
+          <VariantsEditor productId={id} />
         </div>
 
         {/* Actions */}
