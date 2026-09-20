@@ -1,5 +1,7 @@
 export interface CartItem {
   productId: string
+  variantId?: string | null       // null = producto sin variantes
+  variantLabel?: string | null    // ej: "Talle M / Rojo" — para display
   title: string
   price: number
   quantity: number
@@ -17,6 +19,14 @@ export const CART_KEY = 'ecommerce_cart'
 // Returns the storage key for a specific user, or the guest key
 export function getCartKey(userId?: string | null): string {
   return userId ? `ecommerce_cart_${userId}` : CART_KEY
+}
+
+/**
+ * Unique key per cart entry: productId + variantId (or just productId if no variant).
+ * This allows the same product with different variants to be separate cart lines.
+ */
+export function cartItemKey(productId: string, variantId?: string | null): string {
+  return variantId ? `${productId}__${variantId}` : productId
 }
 
 function isValidCart(value: unknown): value is Cart {
@@ -48,38 +58,56 @@ export function saveCart(cart: Cart, userId?: string | null): void {
     const key = getCartKey(userId)
     localStorage.setItem(key, JSON.stringify(cart))
   } catch {
-    // localStorage may be full or unavailable (private browsing)
     console.warn('[cart] Could not save cart to localStorage')
   }
 }
 
 export function addItem(cart: Cart, item: Omit<CartItem, 'quantity'>, qty = 1): Cart {
   if (qty < 1 || item.stock < 1) return cart
-  const existing = cart.items.find((i) => i.productId === item.productId)
+
+  const key = cartItemKey(item.productId, item.variantId)
+  const existing = cart.items.find(
+    (i) => cartItemKey(i.productId, i.variantId) === key
+  )
+
   if (existing) {
     const newQty = Math.min(existing.quantity + qty, item.stock)
     return {
       items: cart.items.map((i) =>
-        i.productId === item.productId ? { ...i, quantity: newQty } : i
+        cartItemKey(i.productId, i.variantId) === key ? { ...i, quantity: newQty } : i
       ),
     }
   }
+
   return {
     items: [...cart.items, { ...item, quantity: Math.min(qty, item.stock) }],
   }
 }
 
-export function updateQty(cart: Cart, productId: string, qty: number): Cart {
-  if (qty < 1) return removeItem(cart, productId)
+export function updateQty(
+  cart: Cart,
+  productId: string,
+  qty: number,
+  variantId?: string | null
+): Cart {
+  const key = cartItemKey(productId, variantId)
+  if (qty < 1) return removeItem(cart, productId, variantId)
   return {
     items: cart.items.map((i) =>
-      i.productId === productId ? { ...i, quantity: Math.min(qty, i.stock) } : i
+      cartItemKey(i.productId, i.variantId) === key
+        ? { ...i, quantity: Math.min(qty, i.stock) }
+        : i
     ),
   }
 }
 
-export function removeItem(cart: Cart, productId: string): Cart {
-  return { items: cart.items.filter((i) => i.productId !== productId) }
+export function removeItem(
+  cart: Cart,
+  productId: string,
+  variantId?: string | null
+): Cart {
+  const key = cartItemKey(productId, variantId)
+  return { items: cart.items.filter((i) => cartItemKey(i.productId, i.variantId) !== key) }
 }
 
 export function cartTotal(cart: Cart): number {

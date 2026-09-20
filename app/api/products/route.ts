@@ -42,6 +42,7 @@ export async function GET(request: Request) {
           select: { id: true, name: true },
         },
         images: { orderBy: { order: 'asc' } },
+        variants: { orderBy: [{ size: 'asc' }, { color: 'asc' }] },
       },
       orderBy: [{ isNew: 'desc' }, { createdAt: 'desc' }],
     })

@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useState, useRef } from 'react'
 import { useCart } from '@/components/CartProvider'
 import { addItem } from '@/lib/cart'
-import type { ProductSummary } from '@/lib/filters'
+import type { ProductSummary, ProductVariantSummary } from '@/lib/filters'
+import { isAvailable, totalStock } from '@/lib/filters'
 
 interface ProductCardProps {
   product: ProductSummary
@@ -16,6 +17,14 @@ interface FlyingEmoji {
   y: number
 }
 
+/** Builds a human-readable label like "Talle M / Rojo" */
+function buildVariantLabel(variant: ProductVariantSummary): string {
+  const parts: string[] = []
+  if (variant.size) parts.push(`Talle ${variant.size}`)
+  if (variant.color) parts.push(variant.color)
+  return parts.join(' / ')
+}
+
 export function ProductCard({ product }: ProductCardProps) {
   const { cart, setCart, addToastNotification } = useCart()
   const [added, setAdded] = useState(false)
@@ -24,10 +33,47 @@ export function ProductCard({ product }: ProductCardProps) {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const emojiCounter = useRef(0)
 
-  // Build image list: prioritise images array, fall back to imageUrl
+  // ── Variant selection state ──────────────────────────────────────────────
+  const hasVariants = product.variants && product.variants.length > 0
+  const [selectedSize, setSelectedSize] = useState<string | null>(null)
+  const [selectedColor, setSelectedColor] = useState<string | null>(null)
+
+  // Unique sizes and colors from variants that have stock
+  const allSizes = hasVariants
+    ? [...new Set(product.variants!.map(v => v.size).filter(Boolean) as string[])]
+    : []
+  const allColors = hasVariants
+    ? [...new Set(product.variants!.map(v => v.color).filter(Boolean) as string[])]
+    : []
+
+  // Resolved selected variant
+  const selectedVariant: ProductVariantSummary | null = hasVariants
+    ? (product.variants!.find(
+        v =>
+          (allSizes.length === 0 || v.size === selectedSize) &&
+          (allColors.length === 0 || v.color === selectedColor)
+      ) ?? null)
+    : null
+
+  // Is a variant selection required but not yet complete?
+  const needsVariantSelection =
+    hasVariants &&
+    ((allSizes.length > 0 && !selectedSize) || (allColors.length > 0 && !selectedColor))
+
+  // Stock to display: variant stock if applicable, else product stock
+  const effectiveStock = hasVariants
+    ? selectedVariant?.stock ?? 0
+    : product.stock
+
+  // Show out-of-stock overlay when:
+  //  - No variants: product.stock === 0
+  //  - Has variants: no variant has stock at all
+  const outOfStock = !isAvailable(product)
+
+  // ── Image gallery ────────────────────────────────────────────────────────
   const allImages: string[] =
     product.images && product.images.length > 0
-      ? product.images.map((i) => i.url)
+      ? product.images.map(i => i.url)
       : product.imageUrl
       ? [product.imageUrl]
       : []
@@ -36,56 +82,68 @@ export function ProductCard({ product }: ProductCardProps) {
   const hasMultipleImages = allImages.length > 1
 
   function prevImage(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setCurrentImageIndex((idx) => (idx - 1 + allImages.length) % allImages.length)
+    e.preventDefault(); e.stopPropagation()
+    setCurrentImageIndex(idx => (idx - 1 + allImages.length) % allImages.length)
   }
 
   function nextImage(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setCurrentImageIndex((idx) => (idx + 1) % allImages.length)
+    e.preventDefault(); e.stopPropagation()
+    setCurrentImageIndex(idx => (idx + 1) % allImages.length)
   }
 
+  // ── Add to cart ──────────────────────────────────────────────────────────
   function handleAddToCart(e: React.MouseEvent<HTMLButtonElement>) {
+    const variantLabel = selectedVariant ? buildVariantLabel(selectedVariant) : null
+    const stockToUse = hasVariants ? (selectedVariant?.stock ?? 0) : product.stock
+
     const updated = addItem(cart, {
       productId: product.id,
+      variantId: selectedVariant?.id ?? null,
+      variantLabel,
       title: product.title,
       price: product.price,
-      stock: product.stock,
+      stock: stockToUse,
       imageUrl: product.imageUrl,
     })
     setCart(updated)
-    addToastNotification(product.title)
 
-    // Get button position for flying emoji
+    const toastLabel = variantLabel
+      ? `${product.title} (${variantLabel})`
+      : product.title
+    addToastNotification(toastLabel)
+
+    // Flying emoji
     const btn = buttonRef.current
     if (btn) {
       const rect = btn.getBoundingClientRect()
       const id = ++emojiCounter.current
-      setFlyingEmojis((prev) => [
-        ...prev,
-        { id, x: rect.left + rect.width / 2, y: rect.top },
-      ])
-      // Remove emoji after animation
-      setTimeout(() => {
-        setFlyingEmojis((prev) => prev.filter((f) => f.id !== id))
-      }, 800)
+      setFlyingEmojis(prev => [...prev, { id, x: rect.left + rect.width / 2, y: rect.top }])
+      setTimeout(() => setFlyingEmojis(prev => prev.filter(f => f.id !== id)), 800)
     }
 
-    // Show "¡Agregado!" state for 2 seconds
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
 
-  const outOfStock = product.stock === 0
-
+  // ── Formatted price ──────────────────────────────────────────────────────
   const formattedPrice = new Intl.NumberFormat('es-AR', {
     style: 'currency',
     currency: 'ARS',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(product.price)
+
+  // ── Is add-to-cart disabled? ─────────────────────────────────────────────
+  const addDisabled =
+    outOfStock ||
+    needsVariantSelection ||
+    (hasVariants && selectedVariant !== null && selectedVariant.stock === 0)
+
+  const stockDisplay = hasVariants
+    ? selectedVariant
+      ? `${selectedVariant.stock} disponibles`
+      : `${totalStock(product)} en stock (elegí opciones)`
+    : `${product.stock} disponibles`
 
   return (
     <>
@@ -105,34 +163,20 @@ export function ProductCard({ product }: ProductCardProps) {
               </div>
             )}
 
-            {/* Mini-gallery arrows — only when multiple images */}
+            {/* Mini-gallery arrows */}
             {hasMultipleImages && (
               <>
-                <button
-                  type="button"
-                  onClick={prevImage}
-                  aria-label="Imagen anterior"
-                  className="absolute left-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/70 text-gray-800 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition hover:bg-white shadow-sm z-10"
-                >
+                <button type="button" onClick={prevImage} aria-label="Imagen anterior"
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/70 text-gray-800 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition hover:bg-white shadow-sm z-10">
                   ‹
                 </button>
-                <button
-                  type="button"
-                  onClick={nextImage}
-                  aria-label="Imagen siguiente"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/70 text-gray-800 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition hover:bg-white shadow-sm z-10"
-                >
+                <button type="button" onClick={nextImage} aria-label="Imagen siguiente"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/70 text-gray-800 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition hover:bg-white shadow-sm z-10">
                   ›
                 </button>
-                {/* Dot indicators */}
                 <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition z-10">
                   {allImages.map((_, idx) => (
-                    <span
-                      key={idx}
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        idx === currentImageIndex ? 'bg-white' : 'bg-white/50'
-                      }`}
-                    />
+                    <span key={idx} className={`w-1.5 h-1.5 rounded-full ${idx === currentImageIndex ? 'bg-white' : 'bg-white/50'}`} />
                   ))}
                 </div>
               </>
@@ -146,7 +190,6 @@ export function ProductCard({ product }: ProductCardProps) {
               </div>
             )}
 
-            {/* "Nuevo" badge */}
             {product.isNew && !outOfStock && (
               <span className="absolute top-2 left-2 z-10 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-sm tracking-wide">
                 Nuevo
@@ -157,73 +200,140 @@ export function ProductCard({ product }: ProductCardProps) {
 
         <div className="p-4 flex flex-col gap-3 flex-1">
           <Link href={`/products/${product.id}`} className="group/link flex-1">
-            <p className="text-xs text-gray-500 uppercase tracking-wider">
-              {product.category.name}
-            </p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">{product.category.name}</p>
             <h3 className="font-semibold text-gray-900 mt-1 line-clamp-2 group-hover/link:text-blue-600">
               {product.title}
             </h3>
           </Link>
 
+          {/* ── Variant selectors ── */}
+          {hasVariants && !outOfStock && (
+            <div className="space-y-2">
+              {/* Sizes */}
+              {allSizes.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1 font-medium">Talle</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allSizes.map(size => {
+                      // Find if this size has any available stock (for any color, or the selected color)
+                      const available = product.variants!.some(
+                        v =>
+                          v.size === size &&
+                          (allColors.length === 0 || !selectedColor || v.color === selectedColor) &&
+                          v.stock > 0
+                      )
+                      const selected = selectedSize === size
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setSelectedSize(selected ? null : size)}
+                          disabled={!available}
+                          className={`px-2.5 py-1 text-xs font-medium rounded-md border transition ${
+                            selected
+                              ? 'bg-black text-white border-black'
+                              : available
+                              ? 'bg-white text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-100'
+                              : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Colors */}
+              {allColors.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1 font-medium">Color</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allColors.map(color => {
+                      const available = product.variants!.some(
+                        v =>
+                          v.color === color &&
+                          (allSizes.length === 0 || !selectedSize || v.size === selectedSize) &&
+                          v.stock > 0
+                      )
+                      const selected = selectedColor === color
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setSelectedColor(selected ? null : color)}
+                          disabled={!available}
+                          className={`px-2.5 py-1 text-xs font-medium rounded-md border transition ${
+                            selected
+                              ? 'bg-black text-white border-black'
+                              : available
+                              ? 'bg-white text-gray-700 border-gray-300 hover:border-gray-600 hover:bg-gray-100'
+                              : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through'
+                          }`}
+                        >
+                          {color}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-baseline gap-2 mt-auto">
-            <p className="text-lg font-bold text-gray-900">
-              {formattedPrice}
-            </p>
-            <p className="text-xs text-gray-400">{product.stock} disponibles</p>
+            <p className="text-lg font-bold text-gray-900">{formattedPrice}</p>
+            <p className="text-xs text-gray-400">{stockDisplay}</p>
           </div>
 
-          {/* Add to cart button with animation */}
+          {/* Add to cart button */}
           <div className="relative">
-            {/* Pulse ring when added */}
             {added && (
-              <span
-                className="absolute inset-0 rounded-lg"
-                style={{
-                  animation: 'cart-pulse 0.6s ease-out forwards',
-                  border: '2px solid #22c55e',
-                  pointerEvents: 'none',
-                }}
-              />
+              <span className="absolute inset-0 rounded-lg" style={{
+                animation: 'cart-pulse 0.6s ease-out forwards',
+                border: '2px solid #22c55e',
+                pointerEvents: 'none',
+              }} />
             )}
             <button
               ref={buttonRef}
               onClick={handleAddToCart}
-              disabled={outOfStock}
+              disabled={addDisabled}
               className={`w-full py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
                 outOfStock
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : needsVariantSelection
+                  ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                  : hasVariants && selectedVariant?.stock === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : added
                   ? 'bg-green-500 text-white scale-105'
                   : 'bg-black text-white hover:bg-gray-800'
               }`}
-              style={{
-                transform: added ? 'scale(1.04)' : 'scale(1)',
-                transition: 'background-color 0.2s, transform 0.15s',
-              }}
+              style={{ transform: added ? 'scale(1.04)' : 'scale(1)', transition: 'background-color 0.2s, transform 0.15s' }}
             >
-              {outOfStock ? 'Sin stock' : added ? '✓ ¡Agregado!' : 'Agregar al carrito'}
+              {outOfStock
+                ? 'Sin stock'
+                : needsVariantSelection
+                ? `Elegí ${allSizes.length > 0 && !selectedSize ? 'talle' : 'color'}`
+                : hasVariants && selectedVariant?.stock === 0
+                ? 'Sin stock en esta opción'
+                : added
+                ? '✓ ¡Agregado!'
+                : 'Agregar al carrito'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Flying emojis — rendered at fixed position relative to viewport */}
-      {flyingEmojis.map((emoji) => (
-        <span
-          key={emoji.id}
-          style={{
-            position: 'fixed',
-            left: emoji.x,
-            top: emoji.y,
-            zIndex: 9999,
-            pointerEvents: 'none',
-            fontSize: '1.25rem',
-            animation: 'fly-up 0.8s ease-out forwards',
-            transform: 'translateX(-50%)',
-          }}
-        >
-          🛒
-        </span>
+      {/* Flying emojis */}
+      {flyingEmojis.map(emoji => (
+        <span key={emoji.id} style={{
+          position: 'fixed', left: emoji.x, top: emoji.y, zIndex: 9999,
+          pointerEvents: 'none', fontSize: '1.25rem',
+          animation: 'fly-up 0.8s ease-out forwards', transform: 'translateX(-50%)',
+        }}>🛒</span>
       ))}
     </>
   )

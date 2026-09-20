@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
           user: {
             select: { id: true, name: true, email: true },
           },
+          deliveryOption: {
+            select: { id: true, name: true, description: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,

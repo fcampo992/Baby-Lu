@@ -1,0 +1,5 @@
+const { PrismaClient } = require('@prisma/client')
+const p = new PrismaClient()
+p.deliveryOption.count()
+  .then(n => { console.log('OK - DeliveryOption rows:', n); return p.$disconnect() })
+  .catch(e => { console.error('ERROR:', e.message); return p.$disconnect() })

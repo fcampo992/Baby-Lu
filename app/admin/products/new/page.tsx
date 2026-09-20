@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { VariantsEditor, VariantRow } from '@/components/admin/VariantsEditor'
 
 interface Category {
   id: string
@@ -54,6 +55,7 @@ export default function CreateProductPage() {
   const [globalError, setGlobalError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([])
+  const [localVariants, setLocalVariants] = useState<VariantRow[]>([])
 
   // Load categories on mount
   useEffect(() => {
@@ -207,7 +209,23 @@ export default function CreateProductPage() {
         return
       }
 
-      // 3. Success — redirect to product list
+      // 3. Create variants if any were added
+      const createdProductId: string = data.product.id
+      const validVariants = localVariants.filter(v => v.size || v.color)
+      for (const variant of validVariants) {
+        const stockNum = parseInt(variant.stock, 10)
+        await fetch(`/api/products/${createdProductId}/variants`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            size: variant.size || null,
+            color: variant.color || null,
+            stock: isNaN(stockNum) ? 0 : stockNum,
+          }),
+        })
+      }
+
+      // 4. Success — redirect to product list
       router.push('/admin/products')
     } catch (err) {
       if (err instanceof FieldError) {
@@ -457,6 +475,17 @@ export default function CreateProductPage() {
           {fieldErrors.imageUrl && (
             <p className="mt-1 text-xs text-red-600">{fieldErrors.imageUrl}</p>
           )}
+        </div>
+
+        {/* Variants section */}
+        <div className="border-t border-gray-100 pt-5">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">Variantes (talle / color)</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Opcional. Si el producto tiene diferentes talles o colores con stock independiente, agregalos acá.
+            </p>
+          </div>
+          <VariantsEditor onChangeLocal={setLocalVariants} />
         </div>
 
         {/* Actions */}
